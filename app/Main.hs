@@ -4,9 +4,8 @@ import Data.Maybe (fromMaybe)
 import System.IO
 import Data.Char
 import System.Exit (exitFailure)
-import Control.Exception (try, SomeException (SomeException))
+import Control.Exception (try, SomeException(SomeException), catch)
 import Control.Exception.Base (evaluate)
-import Control.Exception (catch)
 
 data Valori = Valori{
     humility :: Int,
@@ -20,26 +19,79 @@ data Senpai = Senpai {
     posizione :: (Int, Int)
 }
 
-baseSenpai :: Int -> Int -> Senpai
-baseSenpai x y = Senpai{
-    valori = Valori{
+data Table = Table {
+    dimensione :: Int,
+    senpai :: [Senpai],
+    u :: [(Int, Int)],
+    c :: [(Int, Int)],
+    g :: [(Int, Int)],
+    r :: [(Int, Int)]
+}
+
+
+baseSenpai :: (Int, Int) -> Senpai
+baseSenpai cord = Senpai{
+    valori = Valori {
         humility = 0,
         courage = 0,
         kindness = 0,
         respect = 0
     },
-    posizione = (x, y)
+    posizione = cord
 }
+
 
 asArray :: Valori -> [Int]
 asArray (Valori h c k r) = [h, c, k, r]
 
-nextItem :: Senpai -> Int
-nextItem s = fromMaybe 0 index where
+nextItem :: Table -> Senpai -> [(Int, Int)]
+nextItem t s = case fromMaybe 0 index of
+        0 -> u t
+        1 -> c t
+        2 -> g t
+        3 -> r t
+    where
     index = elemIndex (minimum array) array
     array = asArray (valori s)
 
-firstSempai = baseSenpai 5 6
+split :: Char -> [Char] -> [String]
+split char str = case break (== char) str of
+  (a, char : b) -> a  : split char b
+  (a, "") -> [a]
+
+
+lineFormat:: String -> [(Int, Int)]
+lineFormat string = read s :: [(Int, Int)] where
+    dropped = drop 1 (dropWhile (/= '{') string)
+    taked = take (length dropped - 2) dropped
+    s = "[" ++ format taked ++ "]"
+
+format :: [Char] -> [Char]
+format ('{' : a : ',' : b : '}' : ',' : other) = '(' : a : ',' : b : ')' : ',' : format other
+format ('{' : a : ',' : b : '}' : other) = '(' : a : ',' : b : ')' : other
+format s = s
+
+
+createPlayTable :: String -> Table
+createPlayTable file = Table {
+        dimensione = n,
+        senpai = _s,
+        u = _u,
+        c = _c,
+        g = _g,
+        r = _r
+    } where
+        n = read (drop 4 (head l)) :: Int
+
+        l = lines file
+
+        sValues = lineFormat (l !! 2)
+        _s = map baseSenpai sValues
+        _u = lineFormat (l !! 3)
+        _c = lineFormat (l !! 4)
+        _g = lineFormat (l !! 5)
+        _r = lineFormat (l !! 6)
+        
 
 main :: IO ()
 main = do
@@ -53,19 +105,25 @@ main = do
             risposta <- getLine
 
             case map toUpper risposta of
-                "Y" -> putStrLn "Opening File... "
-                "YES" -> putStrLn "Opening File... "
+                "Y" -> putStr "Opening File... "
+                "YES" -> putStr "Opening File... "
                 _ -> exitFailure
 
-    isAllowed <- try(openFile fileName ReadMode) :: IO (Either SomeException Handle)
+    isAllowed <- try (openFile fileName ReadMode) :: IO (Either SomeException Handle)
 
     case isAllowed of
         Left ex -> putStrLn "Error Opening File"
-        Right handle -> do 
+        Right handle -> do
             file <- hGetContents handle
-            putStr file
+
+            putStrLn file
+
+            let table = createPlayTable file
+
+            let actualNext = nextItem table
+
+            let p = map posizione (senpai table)
+
+            print (p)
             hClose handle
-            print (nextItem firstSempai)
-
-
-
+        -- il read non esegue il cast in maniera corretta e quindi otteniamo l'errore Prelude.read
