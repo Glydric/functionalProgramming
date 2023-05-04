@@ -11,6 +11,7 @@ import Data.Maybe (fromMaybe)
 import System.Exit (exitFailure)
 import System.IO (Handle, IOMode (ReadMode), hClose, hGetContents, openFile)
 import Text.ParserCombinators.ReadP (string)
+import Text.Read (readMaybe)
 
 -- ! Dati
 data Valori = Valori
@@ -108,35 +109,32 @@ possibleCoordinates (Table _ _ u c g r) v = case fromMaybe 0 index of
   2 -> g
   3 -> r
   where
-    index = elemIndex (minimum array) array
     array = asArray v
+    index = elemIndex (minimum array) array
 
-pathComplexity :: (Int, Int) -> ([(Int, Int)] -> [(Int, (Int, Int))])
-pathComplexity (a, b) = map (\(x, y) -> ((a - x) ^ 2 + (b - y) ^ 2, (x, y)))
-
-nearest :: (Int, Int) -> [(Int, Int)] -> (Int, Int)
-nearest base coordinates = coordinate
+nearestValueIn :: (Int, Int) -> [(Int, Int)] -> (Int, Int)
+nearestValueIn base coordinates = snd (minimum (pathComplexity base coordinates))
   where
-    complexity = pathComplexity base coordinates
-    coordinate = snd (minimum complexity)
-
-oneNear :: Int -> Int -> Int
-oneNear x y
-  | x > y = x - 1
-  | x < y = x + 1
-  | otherwise = x
+    pathComplexity :: (Int, Int) -> ([(Int, Int)] -> [(Int, (Int, Int))])
+    pathComplexity (a, b) = map (\(x, y) -> ((a - x) ^ 2 + (b - y) ^ 2, (x, y)))
 
 closerTo :: (Int, Int) -> (Int, Int) -> (Int, Int)
 closerTo (x, y) (a, b) =
   ( oneNear x a,
     if x == a then oneNear y b else y
   )
+  where
+    oneNear :: Int -> Int -> Int
+    oneNear x y
+      | x > y = x - 1
+      | x < y = x + 1
+      | otherwise = x
 
 senpaiToNearest :: Senpai -> [(Int, Int)] -> Senpai
 senpaiToNearest (Senpai valori posizione) possibleCoordinates =
   Senpai
     { valori = valori,
-      posizione = posizione `closerTo` nearest posizione possibleCoordinates
+      posizione = posizione `closerTo` (posizione `nearestValueIn` possibleCoordinates)
     }
 
 -- Ogni esecuzione corrisponde ad un movimento
@@ -157,7 +155,10 @@ gong table =
 
 run :: Table -> Int -> [Table]
 run table 1 = [gong table]
-run table for = table : run (gong table) (for - 1)
+run table for
+    | length (senpai table) <= 1 = [table]
+    | otherwise = table : run (gong table) (for - 1)
+
 
 main :: IO ()
 main = do
@@ -190,9 +191,10 @@ main = do
 
       let runFor = run table
 
-      putStr "Inserisci il numero di esecuzioni: " -- o qualsiasi altro carattere per arrivare alla configurazione finale
+      putStr "Inserisci il numero di esecuzioni o qualsiasi altro carattere per arrivare alla configurazione finale"
       inputStr <- getLine
-      let numerOfExecutions = read inputStr :: Int
+      
+      let numerOfExecutions = fromMaybe 0 (readMaybe inputStr)
 
       let execution = runFor numerOfExecutions
 
