@@ -2,15 +2,17 @@
 
 module Main where
 
+import Control.Arrow (Arrow (first))
 import Control.Exception (SomeException (SomeException), catch, try)
 import Control.Exception.Base (evaluate)
 import Data.Char (toUpper)
-import Data.List (elemIndex, isSuffixOf)
+import Data.List (elemIndex, isSuffixOf, minimumBy)
 import Data.Maybe (fromMaybe)
 import System.Exit (exitFailure)
 import System.IO (Handle, IOMode (ReadMode), hClose, hGetContents, openFile)
 import Text.ParserCombinators.ReadP (string)
 
+-- ! Dati
 data Valori = Valori
   { humility :: Int,
     courage :: Int,
@@ -55,7 +57,7 @@ instance Show Senpai where
 instance Show Table where
   show :: Table -> String
   show (Table n senpai u c g r) =
-    "N = "
+    "\nN = "
       ++ show n
       ++ "\nS = "
       ++ show senpai
@@ -68,16 +70,7 @@ instance Show Table where
       ++ "\nR = "
       ++ show r
 
-nextItem :: Table -> Senpai -> [(Int, Int)]
-nextItem t s = case fromMaybe 0 index of
-  0 -> u t
-  1 -> c t
-  2 -> g t
-  3 -> r t
-  where
-    index = elemIndex (minimum array) array
-    array = asArray (valori s)
-
+-- ! Metodi create init table
 -- sfrutta il pattern matching per definire un formato da trasformare
 format :: [Char] -> [Char]
 format ('{' : a : ',' : b : '}' : ',' : other) = '(' : a : ',' : b : ')' : ',' : format other
@@ -106,6 +99,65 @@ createPlayTable file =
     l = lines file
 
     n = read (drop 4 (head l)) :: Int
+
+-- ! Run del codice
+possibleCoordinates :: Table -> Valori -> [(Int, Int)]
+possibleCoordinates (Table _ _ u c g r) v = case fromMaybe 0 index of
+  0 -> u
+  1 -> c
+  2 -> g
+  3 -> r
+  where
+    index = elemIndex (minimum array) array
+    array = asArray v
+
+pathComplexity :: (Int, Int) -> ([(Int, Int)] -> [(Int, (Int, Int))])
+pathComplexity (a, b) = map (\(x, y) -> ((a - x) ^ 2 + (b - y) ^ 2, (x, y)))
+
+nearest :: (Int, Int) -> [(Int, Int)] -> (Int, Int)
+nearest base coordinates = coordinate
+  where
+    complexity = pathComplexity base coordinates
+    coordinate = snd (minimum complexity)
+
+oneNear :: Int -> Int -> Int
+oneNear x y
+  | x > y = x - 1
+  | x < y = x + 1
+  | otherwise = x
+
+closerTo :: (Int, Int) -> (Int, Int) -> (Int, Int)
+closerTo (x, y) (a, b) =
+  ( oneNear x a,
+    if x == a then oneNear y b else y
+  )
+
+senpaiToNearest :: Senpai -> [(Int, Int)] -> Senpai
+senpaiToNearest (Senpai valori posizione) possibleCoordinates =
+  Senpai
+    { valori = valori,
+      posizione = posizione `closerTo` nearest posizione possibleCoordinates
+    }
+
+-- Ogni esecuzione corrisponde ad un movimento
+gong :: Table -> Table
+gong table =
+  Table
+    { dimensione = dimensione table,
+      senpai = s,
+      u = u table,
+      c = c table,
+      g = g table,
+      r = r table
+    }
+  where
+    toNext s = senpaiToNearest s (possibleCoordinates table (valori s))
+
+    s = map toNext (senpai table)
+
+run :: Table -> Int -> [Table]
+run table 1 = [gong table]
+run table for = table : run (gong table) (for - 1)
 
 main :: IO ()
 main = do
@@ -136,6 +188,12 @@ main = do
 
       hClose handle
 
-      let actualNext = nextItem table
+      let runFor = run table
 
-      putStrLn ("Tabella Formattata: \n" ++ show table)
+      putStr "Inserisci il numero di esecuzioni: " -- o qualsiasi altro carattere per arrivare alla configurazione finale
+      inputStr <- getLine
+      let numerOfExecutions = read inputStr :: Int
+
+      let execution = runFor numerOfExecutions
+
+      putStrLn ("Tabella Formattata: \n" ++ show execution)
