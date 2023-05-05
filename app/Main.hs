@@ -191,7 +191,7 @@ main = do
 
       let runFor = run table
 
-      putStr "Inserisci il numero di esecuzioni o qualsiasi altro carattere per arrivare alla configurazione finale"
+      putStr "Inserisci il numero di esecuzioni o qualsiasi carattere per arrivare fino alla configurazione finale: "
       inputStr <- getLine
       
       let numerOfExecutions = fromMaybe 0 (readMaybe inputStr)
