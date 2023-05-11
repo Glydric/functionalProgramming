@@ -101,7 +101,7 @@ createPlayTable file =
 
     n = read (drop 4 (head l)) :: Int
 
--- ! Run del codice
+-- ! Run
 possibleCoordinates :: Table -> Valori -> [(Int, Int)]
 possibleCoordinates (Table _ _ u c g r) v = case fromMaybe 0 index of
   0 -> u
@@ -130,34 +130,41 @@ closerTo (x, y) (a, b) =
       | x < y = x + 1
       | otherwise = x
 
-senpaiToNearest :: Senpai -> [(Int, Int)] -> Senpai
-senpaiToNearest (Senpai valori posizione) possibleCoordinates =
+-- Muove il senpai verso la prossima meta scegliendola tra quelle definte
+moveSenpai :: Senpai -> [(Int, Int)] -> Senpai
+moveSenpai (Senpai valori posizione) possibleCoordinates =
   Senpai
-    { valori = valori,
-      posizione = posizione `closerTo` (posizione `nearestValueIn` possibleCoordinates)
-    }
+    { valori = newValori,
+      posizione = nextPosizione
+    } where
+      nextPosizione = posizione `closerTo` (posizione `nearestValueIn` possibleCoordinates)
+      newValori = valori
 
 -- Ogni esecuzione corrisponde ad un movimento
 gong :: Table -> Table
 gong table =
   Table
     { dimensione = dimensione table,
-      senpai = s,
+      senpai = nextPositions,
       u = u table,
       c = c table,
       g = g table,
       r = r table
     }
   where
-    toNext s = senpaiToNearest s (possibleCoordinates table (valori s))
+    -- definisce una funzione toNext con le coordinate già definite
+    toNext s = moveSenpai s (possibleCoordinates table (valori s))
 
-    s = map toNext (senpai table)
+    nextPositions = map toNext (senpai table)
 
-run :: Table -> Int -> [Table]
-run table 1 = [gong table]
-run table for
+
+
+
+runFor :: Table -> Int -> [Table]
+runFor table 1 = [gong table]
+runFor table for
     | length (senpai table) <= 1 = [table]
-    | otherwise = table : run (gong table) (for - 1)
+    | otherwise = table : gong table `runFor` (for - 1)
 
 
 main :: IO ()
@@ -183,19 +190,16 @@ main = do
     Right handle -> do
       file <- hGetContents handle
 
-      putStrLn file
-
       let table = createPlayTable file
 
       hClose handle
 
-      let runFor = run table
 
       putStr "Inserisci il numero di esecuzioni o qualsiasi carattere per arrivare fino alla configurazione finale: "
       inputStr <- getLine
-      
+
       let numerOfExecutions = fromMaybe 0 (readMaybe inputStr)
 
-      let execution = runFor numerOfExecutions
+      let execution = table `runFor` numerOfExecutions
 
       putStrLn ("Tabella Formattata: \n" ++ show execution)
