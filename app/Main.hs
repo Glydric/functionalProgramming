@@ -176,23 +176,21 @@ handleValori :: Table -> Table
 handleValori (Table dimensione senpai u c g r) =
   Table
     { dimensione = dimensione,
-      senpai = nuoviSenpai,
+      senpai = map incrementValore senpai,
       u = filterCoordinate u,
       c = filterCoordinate c,
       g = filterCoordinate g,
       r = filterCoordinate r
     }
   where
-    nuoviSenpai = map incrementValore senpai
-
-    -- qui vengono applicate una semplificazione date da due condizioni 
-      -- due elementi non possoono trovarsi nella stessa posizione (se dovesse succedere si rimuovono entrambi)
+    -- qui vengono applicate due semplificazioni dovute a due condizioni 
+      -- due elementi non possonno trovarsi nella stessa posizione (se dovesse succedere si rimuovono entrambi)
       -- la posizione degli elementi da rimuovere coincide con quella dei senpai, senza applicare filtri, in quanto 
         -- se un senpai si trova su di una casella senza elemento, non succede nulla
-        -- se un senpai si trova sulla stessa casella di un elemento, l'elemento viene rimosso
+        -- se un senpai si trova sulla stessa casella di un elemento, l'elemento viene rimosso perchè abbiamo incrementato la relativa virtu
     filterCoordinate = filter (`notElem` map posizione senpai)
     
-
+    -- ! TODO PROBLEMA QUANDO U DIVENTA VUOTO ANCHE S DIVENTA VUOTO, PROBABILMENTE C'`E UN QUALCHE PROBLEMA NEL PRENDERE IL PROSSIMO VALORE MINORE
     -- Prende un senpai e lo ritorna incrementato se la posizione è presente in uno dei rispettivi array
     incrementValore :: Senpai -> Senpai
     incrementValore (Senpai valori posizione) =
@@ -211,23 +209,22 @@ handleValori (Table dimensione senpai u c g r) =
 
 -- Ogni esecuzione corrisponde ad un movimento
 gong :: Table -> Table
-gong table = newTable
+gong table =
+  handleValori
+    Table
+      { dimensione = dimensione table,
+        senpai = nextPositions,
+        u = u table,
+        c = c table,
+        g = g table,
+        r = r table
+      }
   where
     -- definisce una funzione toNext con le coordinate già definite
     toNext = moveSenpai table
 
     nextPositions = map toNext (senpai table)
 
-    newTable =
-      handleValori
-        Table
-          { dimensione = dimensione table,
-            senpai = nextPositions,
-            u = u table,
-            c = c table,
-            g = g table,
-            r = r table
-          }
 
 runFor :: Table -> Int -> [Table]
 runFor table 1 = [gong table]
