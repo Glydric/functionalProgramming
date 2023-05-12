@@ -1,28 +1,32 @@
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Main where
 
 import Control.Arrow (Arrow (first))
 import Control.Exception (SomeException (SomeException), catch, try)
 import Control.Exception.Base (evaluate)
+import Data.Bits (Bits (xor))
 import Data.Char (toUpper)
 import Data.List (elemIndex, isSuffixOf, minimumBy)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust, isNothing)
+import GHC.Generics (Selector (selName))
 import System.Exit (exitFailure)
 import System.IO (Handle, IOMode (ReadMode), hClose, hGetContents, openFile)
 import Text.ParserCombinators.ReadP (string)
 import Text.Read (readMaybe)
 
 -- ! Dati
+
+class Array a b where
+  asArray :: a -> [b]
+
 data Valori = Valori
   { humility :: Int,
     courage :: Int,
     kindness :: Int,
     respect :: Int
   }
-
-asArray :: Valori -> [Int]
-asArray (Valori h c k r) = [h, c, k, r]
 
 data Senpai = Senpai
   { valori :: Valori,
@@ -50,6 +54,10 @@ data Table = Table
     g :: [(Int, Int)],
     r :: [(Int, Int)]
   }
+
+instance Array Valori Int where
+  asArray :: Valori -> [Int]
+  asArray (Valori h c k r) = [h, c, k, r]
 
 instance Show Senpai where
   show (Senpai _ posizione) = show posizione
@@ -101,17 +109,11 @@ createPlayTable file =
 
     n = read (drop 4 (head l)) :: Int
 
--- ! Run
-possibleCoordinates :: Table -> Valori -> [(Int, Int)]
-possibleCoordinates (Table _ _ u c g r) v = case fromMaybe 0 index of
-  0 -> u
-  1 -> c
-  2 -> g
-  3 -> r
-  where
-    array = asArray v
-    index = elemIndex (minimum array) array
+-- ! utilities
+incrementIf :: Int -> Bool -> Int
+incrementIf valore condizione = valore + if condizione then 1 else 0
 
+-- Determina la complessità di tutti i percorsi in una coppia (complexity, coordinate), prende il valore minore di complexity e ritorna le sue coordinate
 nearestValueIn :: (Int, Int) -> [(Int, Int)] -> (Int, Int)
 nearestValueIn base coordinates = snd (minimum (pathComplexity base coordinates))
   where
@@ -130,42 +132,112 @@ closerTo (x, y) (a, b) =
       | x < y = x + 1
       | otherwise = x
 
--- Muove il senpai verso la prossima meta scegliendola tra quelle definte
-moveSenpai :: Senpai -> [(Int, Int)] -> Senpai
-moveSenpai (Senpai valori posizione) possibleCoordinates =
+arrTupleToTupleArr :: [(a, b)] -> ([a], [b])
+arrTupleToTupleArr tuples = (map fst tuples, map snd tuples)
+
+maybeConvertTuple :: (Maybe Int, Maybe Int) -> Maybe (Int, Int)
+maybeConvertTuple (Nothing, Nothing) = Nothing
+maybeConvertTuple (Nothing, _) = Nothing
+maybeConvertTuple (_, Nothing) = Nothing
+maybeConvertTuple (x, y) =
+  Just
+    ( head arr,
+      arr !! 1
+    )
+  where
+    arr = fromMaybe [0, 0] (sequenceA [x, y])
+
+-- ! Run
+
+usefullCoordinates :: Table -> Valori -> [(Int, Int)]
+usefullCoordinates (Table _ _ u c g r) v = case fromMaybe 0 index of
+  0 -> u
+  1 -> c
+  2 -> g
+  3 -> r
+  where
+    array = asArray v :: [Int]
+    index = elemIndex (minimum array) array
+
+-- Muove il senpai verso la prossima meta
+moveSenpai :: Table -> Senpai -> Senpai
+moveSenpai table (Senpai valori posizione) =
   Senpai
     { valori = newValori,
       posizione = nextPosizione
-    } where
-      nextPosizione = posizione `closerTo` (posizione `nearestValueIn` possibleCoordinates)
-      newValori = valori
+    }
+  where
+    coordinates = usefullCoordinates table valori
+    nearest = posizione `nearestValueIn` coordinates
+    nextPosizione = posizione `closerTo` nearest
+    newValori = valori
+
+handleValori :: Table -> Table
+handleValori (Table dimensione senpai u c g r) =
+  Table
+    { dimensione = dimensione,
+      senpai = nuoviSenpai,
+      u = newU,
+      c = c,
+      g = g,
+      r = r
+    }
+  where
+    nuoviSenpai = map incrementValore senpai
+
+    -- qui vengono applicate una semplificazione date da due condizioni 
+      -- due elementi non possoono trovarsi nella stessa posizione (se dovesse succedere si rimuovono entrambi)
+      -- la posizione degli elementi da rimuovere coincide con quella dei senpai, senza applicare filtri, in quanto 
+        -- se un senpai si trova su di una casella senza elemento, non succede nulla
+        -- se un senpai si trova sulla stessa casella di un elemento, l'elemento viene rimosso
+    filterCoord = filter (`notElem` map posizione senpai)
+    
+    newU = filterCoord u
+    newC = filterCoord c
+    newG = filterCoord g
+    newR = filterCoord r
+
+    -- Prende un senpai e lo ritorna incrementato se la posizione è presente in uno dei rispettivi array, ritorna inoltre il valore da rimuovere nella forma (Numero Array, Indice)
+    incrementValore :: Senpai -> Senpai
+    incrementValore (Senpai valori posizione) =
+          Senpai
+            { valori =
+                Valori
+                  { humility = humility valori `incrementIf` (posizione `elem` u),
+                    courage = courage valori `incrementIf` (posizione `elem` c),
+                    kindness = kindness valori `incrementIf` (posizione `elem` g),
+                    respect = respect valori `incrementIf` (posizione `elem` r)
+                  },
+              posizione = posizione
+            }
+
+-- trasforma la condizione da statica a dinamica, (posizione s `elem` array) devi far si che l'incremento avvenga solo nel caso in cui la posizione di s corrisponde ad una nell'array di posizioni dei valori
 
 -- Ogni esecuzione corrisponde ad un movimento
 gong :: Table -> Table
-gong table =
-  Table
-    { dimensione = dimensione table,
-      senpai = nextPositions,
-      u = u table,
-      c = c table,
-      g = g table,
-      r = r table
-    }
+gong table = newTable
   where
     -- definisce una funzione toNext con le coordinate già definite
-    toNext s = moveSenpai s (possibleCoordinates table (valori s))
+    toNext = moveSenpai table
 
     nextPositions = map toNext (senpai table)
 
-
-
+    newTable =
+      handleValori
+        Table
+          { dimensione = dimensione table,
+            senpai = nextPositions,
+            u = u table,
+            c = c table,
+            g = g table,
+            r = r table
+          }
 
 runFor :: Table -> Int -> [Table]
 runFor table 1 = [gong table]
 runFor table for
-    | length (senpai table) <= 1 = [table]
-    | otherwise = table : gong table `runFor` (for - 1)
-
+  | length (senpai table) <= 1 = [table]
+  | otherwise = table : gong table `runFor` (for - 1)
 
 main :: IO ()
 main = do
@@ -192,9 +264,6 @@ main = do
 
       let table = createPlayTable file
 
-      hClose handle
-
-
       putStr "Inserisci il numero di esecuzioni o qualsiasi carattere per arrivare fino alla configurazione finale: "
       inputStr <- getLine
 
@@ -203,3 +272,5 @@ main = do
       let execution = table `runFor` numerOfExecutions
 
       putStrLn ("Tabella Formattata: \n" ++ show execution)
+
+      hClose handle
