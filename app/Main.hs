@@ -177,10 +177,10 @@ handleValori (Table dimensione senpai u c g r) =
   Table
     { dimensione = dimensione,
       senpai = nuoviSenpai,
-      u = newU,
-      c = c,
-      g = g,
-      r = r
+      u = filterCoordinate u,
+      c = filterCoordinate c,
+      g = filterCoordinate g,
+      r = filterCoordinate r
     }
   where
     nuoviSenpai = map incrementValore senpai
@@ -190,14 +190,10 @@ handleValori (Table dimensione senpai u c g r) =
       -- la posizione degli elementi da rimuovere coincide con quella dei senpai, senza applicare filtri, in quanto 
         -- se un senpai si trova su di una casella senza elemento, non succede nulla
         -- se un senpai si trova sulla stessa casella di un elemento, l'elemento viene rimosso
-    filterCoord = filter (`notElem` map posizione senpai)
+    filterCoordinate = filter (`notElem` map posizione senpai)
     
-    newU = filterCoord u
-    newC = filterCoord c
-    newG = filterCoord g
-    newR = filterCoord r
 
-    -- Prende un senpai e lo ritorna incrementato se la posizione è presente in uno dei rispettivi array, ritorna inoltre il valore da rimuovere nella forma (Numero Array, Indice)
+    -- Prende un senpai e lo ritorna incrementato se la posizione è presente in uno dei rispettivi array
     incrementValore :: Senpai -> Senpai
     incrementValore (Senpai valori posizione) =
           Senpai
