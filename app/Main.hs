@@ -23,10 +23,10 @@ class Array a b where
   asArray :: a -> [b]
 
 data Valori = Valori
-  { humility :: Int,
-    courage :: Int,
-    kindness :: Int,
-    respect :: Int
+  { umilta :: Int,
+    coraggio :: Int,
+    gentilezza :: Int,
+    rispetto :: Int
   }
 
 data Senpai = Senpai
@@ -39,10 +39,10 @@ defaultSenpai coordinate =
   Senpai
     { valori =
         Valori
-          { humility = 0,
-            courage = 0,
-            kindness = 0,
-            respect = 0
+          { umilta = 0,
+            coraggio = 0,
+            gentilezza = 0,
+            rispetto = 0
           },
       posizione = coordinate
     }
@@ -56,12 +56,24 @@ data Table = Table
     r :: [(Int, Int)]
   }
 
+points :: Senpai -> Int
+points (Senpai valori _) = umilta valori + coraggio valori + gentilezza valori + rispetto valori
+
 instance Array Valori Int where
   asArray :: Valori -> [Int]
   asArray (Valori h c k r) = [h, c, k, r]
 
 instance Show Senpai where
+  show :: Senpai -> String
   show (Senpai _ posizione) = show posizione
+
+instance Eq Senpai where
+  (==) :: Senpai -> Senpai -> Bool
+  (==) s1 s2 = valori s1 == valori s2 && posizione s1 == posizione s2
+
+instance Eq Valori where
+  (==) :: Valori -> Valori -> Bool
+  (==) v1 v2 = umilta v1 == umilta v2 && coraggio v1 == coraggio v2 && gentilezza v1 == gentilezza v2 && rispetto v1 == rispetto v2
 
 -- Show indica che Table appartiene un'interfaccia Show per definire la funzione show
 instance Show Table where
@@ -117,9 +129,12 @@ incrementIf valore condizione = valore + if condizione then 1 else 0
 -- Determina la complessità di tutti i percorsi in una coppia (complexity, coordinate), prende il valore minore di complexity e ritorna le sue coordinate
 nearestValueIn :: (Int, Int) -> [(Int, Int)] -> (Int, Int)
 nearestValueIn base coordinates = snd (minimum (pathComplexity base coordinates))
-  where
-    pathComplexity :: (Int, Int) -> ([(Int, Int)] -> [(Int, (Int, Int))])
-    pathComplexity (a, b) = map (\(x, y) -> ((a - x) ^ 2 + (b - y) ^ 2, (x, y)))
+
+complexityCalc :: (Int, Int) -> (Int, Int) -> Int
+complexityCalc (x, y) (a, b) = (a - x) ^ 2 + (b - y) ^ 2
+
+pathComplexity :: (Int, Int) -> ([(Int, Int)] -> [(Int, (Int, Int))])
+pathComplexity (a, b) = map (\(x, y) -> (complexityCalc (a, b) (x, y), (x, y)))
 
 closerTo :: (Int, Int) -> (Int, Int) -> (Int, Int)
 closerTo (x, y) (a, b)
@@ -150,6 +165,7 @@ maybeConvertTuple (x, y) =
   where
     arr = fromMaybe [0, 0] (sequenceA [x, y])
 
+
 -- ! Run
 
 allCoordinatesValori :: Table -> [(Int, Int)]
@@ -166,6 +182,53 @@ moveSenpai table (Senpai valori posizione) =
     nearest = posizione `nearestValueIn` allCoordinatesValori table
     nextPosizione = posizione `closerTo` nearest
 
+handleCombat :: Table -> Table
+handleCombat (Table dimensione senpai u c g r) =
+  Table
+    { dimensione = dimensione,
+      senpai = filter haveMorePoints newSenpai,
+      u = u,
+      c = c,
+      g = g,
+      r = r
+    }
+  where
+    newSenpai = map incrementValore senpai
+
+    -- determina se il senpai possiede più punti del suo immediatamente vicino
+    haveMorePoints :: Senpai -> Bool
+    haveMorePoints senpai 
+      | fst complexity <= 1 = points senpai > points otherSenpai -- ? TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
+      | otherwise = True
+      where
+        -- prende il vicino
+        complexity = nearestSenpai senpai
+        otherSenpai = snd complexity
+
+
+    -- ritorna la posizione del senpai più vicino
+    nearestSenpai :: Senpai -> (Int, Senpai)
+    nearestSenpai actualSenpai = head (map (\s -> (complexityCalc (posizione actualSenpai) (posizione s), s)) senpai)
+    -- Prende un senpai e lo ritorna incrementando ogni valore se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
+    incrementValore :: Senpai -> Senpai
+    incrementValore senpai
+      | fst complexity <= 1 =
+          Senpai
+            { valori =
+                Valori
+                  { umilta = umilta v `incrementIf` (umilta v > umilta (valori otherSenpai)),
+                    coraggio = coraggio v `incrementIf` (coraggio v > coraggio (valori otherSenpai)),
+                    gentilezza = gentilezza v `incrementIf` (gentilezza v > gentilezza (valori otherSenpai)),
+                    rispetto = rispetto v `incrementIf` (rispetto v > rispetto (valori otherSenpai))
+                  },
+              posizione = posizione senpai
+            }
+      | otherwise = senpai
+      where
+        v = valori senpai
+        complexity = nearestSenpai senpai
+        otherSenpai = snd complexity
+
 handleValori :: Table -> Table
 handleValori (Table dimensione senpai u c g r) =
   Table
@@ -178,23 +241,22 @@ handleValori (Table dimensione senpai u c g r) =
     }
   where
     -- qui vengono applicate due semplificazioni dovute a due condizioni
-    -- due elementi non possonno trovarsi nella stessa posizione (se dovesse succedere si rimuovono entrambi)
-    -- la posizione degli elementi da rimuovere coincide con quella dei senpai, senza applicare filtri, in quanto
-    -- se un senpai si trova su di una casella senza elemento, non succede nulla
-    -- se un senpai si trova sulla stessa casella di un elemento, l'elemento viene rimosso perchè abbiamo incrementato la relativa virtu
+    --  due elementi non possonno trovarsi nella stessa posizione (se dovesse succedere si rimuovono entrambi)
+    --  la posizione degli elementi da rimuovere coincide con quella dei senpai, senza applicare filtri, in quanto
+    --   se un senpai si trova su di una casella senza elemento, non succede nulla
+    --   se un senpai si trova sulla stessa casella di un elemento, l'elemento viene rimosso perchè abbiamo incrementato la relativa virtu
     filterCoordinate = filter (`notElem` map posizione senpai)
 
-    -- ! TODO PROBLEMA QUANDO U DIVENTA VUOTO ANCHE S DIVENTA VUOTO, PROBABILMENTE C'`E UN QUALCHE PROBLEMA NEL PRENDERE IL PROSSIMO VALORE MINORE
     -- Prende un senpai e lo ritorna incrementato se la posizione è presente in uno dei rispettivi array
     incrementValore :: Senpai -> Senpai
     incrementValore (Senpai valori posizione) =
       Senpai
         { valori =
             Valori
-              { humility = humility valori `incrementIf` (posizione `elem` u),
-                courage = courage valori `incrementIf` (posizione `elem` c),
-                kindness = kindness valori `incrementIf` (posizione `elem` g),
-                respect = respect valori `incrementIf` (posizione `elem` r)
+              { umilta = umilta valori `incrementIf` (posizione `elem` u),
+                coraggio = coraggio valori `incrementIf` (posizione `elem` c),
+                gentilezza = gentilezza valori `incrementIf` (posizione `elem` g),
+                rispetto = rispetto valori `incrementIf` (posizione `elem` r)
               },
           posizione = posizione
         }
@@ -204,15 +266,17 @@ handleValori (Table dimensione senpai u c g r) =
 -- Ogni esecuzione corrisponde ad un movimento
 gong :: Table -> Table
 gong table =
-  handleValori
-    Table
-      { dimensione = dimensione table,
-        senpai = nextPositions,
-        u = u table,
-        c = c table,
-        g = g table,
-        r = r table
-      }
+  handleCombat
+    ( handleValori
+        Table
+          { dimensione = dimensione table,
+            senpai = nextPositions,
+            u = u table,
+            c = c table,
+            g = g table,
+            r = r table
+          }
+    )
   where
     -- definisce una funzione toNext con le coordinate già definite
     toNext = moveSenpai table
