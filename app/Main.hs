@@ -121,10 +121,12 @@ nearestValueIn base coordinates = snd (minimum (pathComplexity base coordinates)
     pathComplexity (a, b) = map (\(x, y) -> ((a - x) ^ 2 + (b - y) ^ 2, (x, y)))
 
 closerTo :: (Int, Int) -> (Int, Int) -> (Int, Int)
-closerTo (x, y) (a, b) =
-  ( oneNear x a,
-    if x == a then oneNear y b else y
-  )
+closerTo (x, y) (a, b)
+  | null [a, b] = (x, y)
+  | otherwise =
+      ( oneNear x a,
+        if x == a then oneNear y b else y
+      )
   where
     oneNear :: Int -> Int -> Int
     oneNear x y
@@ -149,28 +151,19 @@ maybeConvertTuple (x, y) =
 
 -- ! Run
 
-usefullCoordinates :: Table -> Valori -> [(Int, Int)]
-usefullCoordinates (Table _ _ u c g r) v = case fromMaybe 0 index of
-  0 -> u
-  1 -> c
-  2 -> g
-  3 -> r
-  where
-    array = asArray v :: [Int]
-    index = elemIndex (minimum array) array
+allCoordinatesValori :: Table -> [(Int, Int)]
+allCoordinatesValori (Table _ _ u c g r) = u ++ c ++ g ++ r
 
 -- Muove il senpai verso la prossima meta
 moveSenpai :: Table -> Senpai -> Senpai
 moveSenpai table (Senpai valori posizione) =
   Senpai
-    { valori = newValori,
+    { valori = valori,
       posizione = nextPosizione
     }
   where
-    coordinates = usefullCoordinates table valori
-    nearest = posizione `nearestValueIn` coordinates
+    nearest = posizione `nearestValueIn` allCoordinatesValori table
     nextPosizione = posizione `closerTo` nearest
-    newValori = valori
 
 handleValori :: Table -> Table
 handleValori (Table dimensione senpai u c g r) =
@@ -183,27 +176,27 @@ handleValori (Table dimensione senpai u c g r) =
       r = filterCoordinate r
     }
   where
-    -- qui vengono applicate due semplificazioni dovute a due condizioni 
-      -- due elementi non possonno trovarsi nella stessa posizione (se dovesse succedere si rimuovono entrambi)
-      -- la posizione degli elementi da rimuovere coincide con quella dei senpai, senza applicare filtri, in quanto 
-        -- se un senpai si trova su di una casella senza elemento, non succede nulla
-        -- se un senpai si trova sulla stessa casella di un elemento, l'elemento viene rimosso perchè abbiamo incrementato la relativa virtu
+    -- qui vengono applicate due semplificazioni dovute a due condizioni
+    -- due elementi non possonno trovarsi nella stessa posizione (se dovesse succedere si rimuovono entrambi)
+    -- la posizione degli elementi da rimuovere coincide con quella dei senpai, senza applicare filtri, in quanto
+    -- se un senpai si trova su di una casella senza elemento, non succede nulla
+    -- se un senpai si trova sulla stessa casella di un elemento, l'elemento viene rimosso perchè abbiamo incrementato la relativa virtu
     filterCoordinate = filter (`notElem` map posizione senpai)
-    
+
     -- ! TODO PROBLEMA QUANDO U DIVENTA VUOTO ANCHE S DIVENTA VUOTO, PROBABILMENTE C'`E UN QUALCHE PROBLEMA NEL PRENDERE IL PROSSIMO VALORE MINORE
     -- Prende un senpai e lo ritorna incrementato se la posizione è presente in uno dei rispettivi array
     incrementValore :: Senpai -> Senpai
     incrementValore (Senpai valori posizione) =
-          Senpai
-            { valori =
-                Valori
-                  { humility = humility valori `incrementIf` (posizione `elem` u),
-                    courage = courage valori `incrementIf` (posizione `elem` c),
-                    kindness = kindness valori `incrementIf` (posizione `elem` g),
-                    respect = respect valori `incrementIf` (posizione `elem` r)
-                  },
-              posizione = posizione
-            }
+      Senpai
+        { valori =
+            Valori
+              { humility = humility valori `incrementIf` (posizione `elem` u),
+                courage = courage valori `incrementIf` (posizione `elem` c),
+                kindness = kindness valori `incrementIf` (posizione `elem` g),
+                respect = respect valori `incrementIf` (posizione `elem` r)
+              },
+          posizione = posizione
+        }
 
 -- trasforma la condizione da statica a dinamica, (posizione s `elem` array) devi far si che l'incremento avvenga solo nel caso in cui la posizione di s corrisponde ad una nell'array di posizioni dei valori
 
@@ -225,11 +218,11 @@ gong table =
 
     nextPositions = map toNext (senpai table)
 
-
 runFor :: Table -> Int -> [Table]
 runFor table 1 = [gong table]
 runFor table for
   | length (senpai table) <= 1 = [table]
+  | null (allCoordinatesValori table) = [table]
   | otherwise = table : gong table `runFor` (for - 1)
 
 main :: IO ()
