@@ -6,6 +6,7 @@ module Main where
 import Control.Arrow (Arrow (first))
 import Control.Exception (SomeException (SomeException), catch, try)
 import Control.Exception.Base (evaluate)
+import Control.Monad (replicateM)
 import Data.Bits (Bits (xor))
 import Data.Char (toUpper)
 import Data.List (elemIndex, isSuffixOf, minimumBy)
@@ -218,12 +219,14 @@ gong table =
 
     nextPositions = map toNext (senpai table)
 
-runFor :: Table -> Int -> [Table]
-runFor table 1 = [gong table]
+runFor :: Table -> Int -> IO [Table]
+runFor table 1 = return [gong table]
 runFor table for
-  | length (senpai table) <= 1 = [table]
-  | null (allCoordinatesValori table) = [table]
-  | otherwise = table : gong table `runFor` (for - 1)
+  | length (senpai table) <= 1 = return [table]
+  | null (allCoordinatesValori table) = return [table]
+  | otherwise = fmap (table :) rest
+  where
+    rest = do gong table `runFor` (for - 1)
 
 main :: IO ()
 main = do
@@ -250,13 +253,14 @@ main = do
 
       let table = createPlayTable file
 
-      putStr "Inserisci il numero di esecuzioni o qualsiasi carattere per arrivare fino alla configurazione finale: "
+      putStr "Inserisci il numero di esecuzioni o qualsiasi carattere per raggiungere la configurazione finale: "
       inputStr <- getLine
 
       let numerOfExecutions = fromMaybe 0 (readMaybe inputStr)
 
-      let execution = table `runFor` numerOfExecutions
+      ex <- table `runFor` numerOfExecutions
 
-      putStrLn ("Tabella Formattata: \n" ++ show execution)
+      putStrLn "~ Esecuzione ~"
+      mapM_ print ex
 
       hClose handle
