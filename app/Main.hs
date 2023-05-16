@@ -34,19 +34,6 @@ data Senpai = Senpai
     posizione :: (Int, Int)
   }
 
-defaultSenpai :: (Int, Int) -> Senpai
-defaultSenpai coordinate =
-  Senpai
-    { valori =
-        Valori
-          { umilta = 0,
-            coraggio = 0,
-            gentilezza = 0,
-            rispetto = 0
-          },
-      posizione = coordinate
-    }
-
 data Table = Table
   { dimensione :: Int,
     senpai :: [Senpai],
@@ -55,9 +42,6 @@ data Table = Table
     g :: [(Int, Int)],
     r :: [(Int, Int)]
   }
-
-points :: Senpai -> Int
-points (Senpai valori _) = umilta valori + coraggio valori + gentilezza valori + rispetto valori
 
 instance Array Valori Int where
   asArray :: Valori -> [Int]
@@ -75,52 +59,79 @@ instance Eq Valori where
   (==) :: Valori -> Valori -> Bool
   (==) v1 v2 = umilta v1 == umilta v2 && coraggio v1 == coraggio v2 && gentilezza v1 == gentilezza v2 && rispetto v1 == rispetto v2
 
+defaultSenpai :: (Int, Int) -> Senpai
+defaultSenpai coordinate =
+  Senpai
+    { valori =
+        Valori
+          { umilta = 0,
+            coraggio = 0,
+            gentilezza = 0,
+            rispetto = 0
+          },
+      posizione = coordinate
+    }
+
+points :: Senpai -> Int
+points (Senpai valori _) = umilta valori + coraggio valori + gentilezza valori + rispetto valori
+
 -- Show indica che Table appartiene un'interfaccia Show per definire la funzione show
 instance Show Table where
   show :: Table -> String
   show (Table n senpai u c g r) =
     "\nN = "
       ++ show n
-      ++ "\nS = "
+      ++ "\nD = {"
+      ++ "\n\tS = "
       ++ show senpai
-      ++ "\nU = "
+      ++ ",\n\tU = "
       ++ show u
-      ++ "\nC = "
+      ++ ",\n\tC = "
       ++ show c
-      ++ "\nG = "
+      ++ ",\n\tG = "
       ++ show g
-      ++ "\nR = "
+      ++ ",\n\tR = "
       ++ show r
+      ++ "\n}"
 
 -- ! Metodi create init table
--- sfrutta il pattern matching per definire un formato da trasformare
+-- sfrutta il pattern matching per definire la formattazione da rispettare
 format :: [Char] -> [Char]
-format ('{' : a : ',' : b : '}' : ',' : other) = '(' : a : ',' : b : ')' : ',' : format other
-format ('{' : a : ',' : b : '}' : other) = '(' : a : ',' : b : ')' : other
-format s = s
+format "}}" = ")]"
+format "}}," = ")]"
+format ('{' : '{' : some) = '[' : '(' : format some
+format ('{' : some) = '(' : format some
+format (',' : some) = ',' : format some
+format ('}' : some) = ')' : format some
+format (s : some) = s : format some
 
 -- gestisce la riga raw di un file.dojo per poter essere formattata e la trasforma nella relativa valutazione
 lineFormat :: String -> [(Int, Int)]
-lineFormat string = read s :: [(Int, Int)]
-  where
-    dropped = drop 1 (dropWhile (/= '{') string)
-    taked = take (length dropped - 2) dropped
-    s = "[" ++ format taked ++ "]"
+lineFormat ('\t' : _ : '=' : values) = read (format values) :: [(Int, Int)]
 
 createPlayTable :: String -> Table
 createPlayTable file =
   Table
     { dimensione = n,
-      senpai = map defaultSenpai (lineFormat (l !! 2)),
-      u = lineFormat (l !! 3),
-      c = lineFormat (l !! 4),
-      g = lineFormat (l !! 5),
-      r = lineFormat (l !! 6 ++ " ")
+      senpai = if areOut (map posizione _senpai) then error "Un senpai ha una coordinata superiore alla dimensione" else _senpai,
+      u = if areOut _u then error "Un oggetto 'u' ha una coordinata superiore alla dimensione" else _u,
+      c = if areOut _c then error "Un oggetto 'c' ha una coordinata superiore alla dimensione" else _c,
+      g = if areOut _g then error "Un oggetto 'g' ha una coordinata superiore alla dimensione" else _g,
+      r = if areOut _r then error "Un oggetto 'r' ha una coordinata superiore alla dimensione" else _r
     }
   where
     l = lines file
-
     n = read (drop 4 (head l)) :: Int
+
+    areOut :: [(Int, Int)] -> Bool
+    areOut [] = False
+    areOut (x : xs) = (\(x, y) -> x > n || y > n) x || areOut xs
+
+    _senpai = map defaultSenpai (lineFormat (l !! 2))
+    _u = lineFormat (l !! 3)
+    _c = lineFormat (l !! 4)
+    _g = lineFormat (l !! 5)
+    _r = lineFormat (l !! 6)
 
 -- ! utilities
 incrementIf :: Int -> Bool -> Int
@@ -165,7 +176,6 @@ maybeConvertTuple (x, y) =
   where
     arr = fromMaybe [0, 0] (sequenceA [x, y])
 
-
 -- ! Run
 
 allCoordinatesValori :: Table -> [(Int, Int)]
@@ -197,14 +207,13 @@ handleCombat (Table dimensione senpai u c g r) =
 
     -- determina se il senpai possiede più punti del suo immediatamente vicino
     haveMorePoints :: Senpai -> Bool
-    haveMorePoints senpai 
+    haveMorePoints senpai
       | fst complexity <= 1 = points senpai > points otherSenpai -- ? TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
       | otherwise = True
       where
         -- prende il vicino
         complexity = nearestSenpai senpai
         otherSenpai = snd complexity
-
 
     -- ritorna la posizione del senpai più vicino
     nearestSenpai :: Senpai -> (Int, Senpai)
@@ -283,14 +292,23 @@ gong table =
 
     nextPositions = map toNext (senpai table)
 
-runFor :: Table -> Int -> IO [Table]
-runFor table 1 = return [gong table]
+runFor :: Table -> Int -> IO Table
+runFor table 1 = return $ gong table
 runFor table for
+  | length (senpai table) <= 1 = return table
+  | null (allCoordinatesValori table) = return table
+  | otherwise = fmap gong rest
+  where
+    rest = do gong table `runFor` (for - 1)
+
+runIterations :: Table -> Int -> IO [Table]
+runIterations table 1 = return [gong table]
+runIterations table for
   | length (senpai table) <= 1 = return [table]
   | null (allCoordinatesValori table) = return [table]
   | otherwise = fmap (table :) rest
   where
-    rest = do gong table `runFor` (for - 1)
+    rest = do gong table `runIterations` (for - 1)
 
 main :: IO ()
 main = do
@@ -317,14 +335,21 @@ main = do
 
       let table = createPlayTable file
 
-      putStr "Inserisci il numero di esecuzioni o qualsiasi carattere per raggiungere la configurazione finale: "
+      putStr "Scegli l'esecuzione inserendo il valore corrispondente: \
+      \\n - `$num` per mostrare tutte le iterazioni fino a num\
+      \\n - `num` per mostrare solo l'esecuzione num\
+      \\n - qualsiasi altro carattere per mostrare solo la configurazione finale\
+      \\n > "
       inputStr <- getLine
 
-      let numerOfExecutions = fromMaybe 0 (readMaybe inputStr)
+      putStrLn "\n   ~ Esecuzione ~"
 
-      ex <- table `runFor` numerOfExecutions
-
-      putStrLn "~ Esecuzione ~"
-      mapM_ print ex
+      ex <- case inputStr of
+        ('$' : n) -> do
+          ex <- table `runIterations` fromMaybe 0 (readMaybe n)
+          print ex
+        _ -> do
+          ex <- table `runFor` fromMaybe 0 (readMaybe inputStr)
+          print ex
 
       hClose handle
