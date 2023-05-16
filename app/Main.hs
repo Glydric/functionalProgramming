@@ -166,7 +166,7 @@ maybeConvertTuple (x, y) =
       arr !! 1
     )
   where
-    arr = fromMaybe [0, 0] (sequenceA [x, y])
+    arr = fromMaybe [0] (sequenceA [x, y])
 
 -- ! Run
 
@@ -197,23 +197,32 @@ handleCombat (Table dimensione senpai u c g r) =
   where
     newSenpai = map incrementValore senpai
 
-    -- determina se il senpai possiede più punti del suo immediatamente vicino
+    -- ritorna la complessità ed il senpai più vicino
+    nearestSenpai :: Senpai -> (Int, Senpai)
+    nearestSenpai (Senpai _ pos) = minimumBy (\(x, _) (x', _) -> compare x x') (filter (\(_, s) -> posizione s /= pos) (map (\s -> (complexityCalc pos (posizione s), s)) senpai))
+
+    -- determina se il senpai possiede più punti totali di quello immediatamente vicino
     haveMorePoints :: Senpai -> Bool
     haveMorePoints senpai
-      | fst complexity <= 1 = points senpai > points otherSenpai -- ? TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
+      | fst complexity <= 1 = calcWinner -- ? TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
       | otherwise = True
       where
         -- prende il vicino
         complexity = nearestSenpai senpai
         otherSenpai = snd complexity
 
-    -- ritorna la posizione del senpai più vicino
-    nearestSenpai :: Senpai -> (Int, Senpai)
-    nearestSenpai actualSenpai = head (map (\s -> (complexityCalc (posizione actualSenpai) (posizione s), s)) senpai)
+        calcWinner
+          | points senpai == points otherSenpai = calcParityPoints senpai > calcParityPoints otherSenpai
+          | otherwise = points senpai > points otherSenpai
+
+        calcParityPoints :: Senpai -> Int
+        calcParityPoints (Senpai _ (n, m)) = ((n + m) * (n + m - 1) `div` 2) + n - m
+
     -- Prende un senpai e lo ritorna incrementando ogni valore se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
     incrementValore :: Senpai -> Senpai
     incrementValore senpai
-      | fst complexity <= 1 =
+      | fst complexity <= 1 -- ? TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
+        =
           Senpai
             { valori =
                 Valori
@@ -327,11 +336,12 @@ main = do
 
       let table = createPlayTable file
 
-      putStr "Scegli l'esecuzione inserendo il valore corrispondente: \
-      \\n - `$num` per mostrare tutte le iterazioni fino a num\
-      \\n - `num` per mostrare solo l'esecuzione num\
-      \\n - qualsiasi altro carattere per mostrare solo la configurazione finale\
-      \\n > "
+      putStr
+        "Scegli l'esecuzione inserendo il valore corrispondente: \
+        \\n - `$num` per mostrare tutte le iterazioni fino a num\
+        \\n - `num` per mostrare solo l'esecuzione num\
+        \\n - qualsiasi altro carattere per mostrare solo la configurazione finale\
+        \\n > "
       inputStr <- getLine
 
       putStrLn "\n   ~ Esecuzione ~"
