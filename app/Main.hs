@@ -51,14 +51,6 @@ instance Show Senpai where
   show :: Senpai -> String
   show (Senpai _ posizione) = show posizione
 
-instance Eq Senpai where
-  (==) :: Senpai -> Senpai -> Bool
-  (==) s1 s2 = valori s1 == valori s2 && posizione s1 == posizione s2
-
-instance Eq Valori where
-  (==) :: Valori -> Valori -> Bool
-  (==) v1 v2 = umilta v1 == umilta v2 && coraggio v1 == coraggio v2 && gentilezza v1 == gentilezza v2 && rispetto v1 == rispetto v2
-
 defaultSenpai :: (Int, Int) -> Senpai
 defaultSenpai coordinate =
   Senpai
