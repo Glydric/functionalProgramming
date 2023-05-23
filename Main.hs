@@ -1,5 +1,7 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Main where
 
@@ -10,7 +12,7 @@ import Control.Monad (replicateM)
 import Data.Bits (Bits (xor))
 import Data.Char (toUpper)
 import Data.List (elemIndex, isSuffixOf, minimumBy)
-import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import GHC.Generics (Selector (selName))
 import System.Exit (exitFailure)
 import System.IO (Handle, IOMode (ReadMode), hClose, hGetContents, openFile)
@@ -18,10 +20,6 @@ import Text.ParserCombinators.ReadP (string)
 import Text.Read (readMaybe)
 
 -- ! Dati
-
-class Array a b where
-  asArray :: a -> [b]
-
 data Valori = Valori
   { umilta :: Int,
     coraggio :: Int,
@@ -43,48 +41,61 @@ data Table = Table
     r :: [(Int, Int)]
   }
 
+class Array a b where
+  asArray :: a -> [b]
+
 instance Array Valori Int where
   asArray :: Valori -> [Int]
   asArray (Valori h c k r) = [h, c, k, r]
 
 instance Show Senpai where
   show :: Senpai -> String
-  show (Senpai _ posizione) = show posizione
+  show (Senpai v p) = show (fst p, snd p, array !! 0, array !! 1, array !! 2, array !! 3)
+    where
+      array = asArray v :: [Int]
 
-defaultSenpai :: (Int, Int) -> Senpai
-defaultSenpai coordinate =
-  Senpai
-    { valori =
-        Valori
-          { umilta = 0,
-            coraggio = 0,
-            gentilezza = 0,
-            rispetto = 0
-          },
-      posizione = coordinate
-    }
+instance Eq Senpai where
+  (==) s1 s2 = False
+  (/=) s1 s2 = True
 
-points :: Senpai -> Int
-points (Senpai valori _) = umilta valori + coraggio valori + gentilezza valori + rispetto valori
+instance Ord Senpai where
+  (>) :: Senpai -> Senpai -> Bool
+  (>) senpai otherSenpai
+    | points senpai == points otherSenpai = positionPoints senpai > positionPoints otherSenpai
+    | otherwise = points senpai > points otherSenpai
+  (<=) = (not .) . (>)
 
 -- Show indica che Table appartiene un'interfaccia Show per definire la funzione show
 instance Show Table where
   show :: Table -> String
   show (Table n senpai u c g r) =
-    "\nN = "
-      ++ show n
-      ++ "\nD = {"
-      ++ "\n\tS = "
-      ++ show senpai
-      ++ ",\n\tU = "
-      ++ show u
-      ++ ",\n\tC = "
-      ++ show c
-      ++ ",\n\tG = "
-      ++ show g
-      ++ ",\n\tR = "
-      ++ show r
-      ++ "\n}"
+    "\nN = " ++ show n ++ "\nD = {" ++ "\n\tS = " ++ show senpai ++ ",\n\tU = " ++ show u ++ ",\n\tC = " ++ show c ++ ",\n\tG = " ++ show g ++ ",\n\tR = " ++ show r ++ "\n}"
+
+defaultValori :: Int -> Int -> Int -> Int -> Valori
+defaultValori u c g r =
+  Valori
+    { umilta = u,
+      coraggio = c,
+      gentilezza = g,
+      rispetto = r
+    }
+
+defaultSenpai :: (Int, Int, Int, Int, Int, Int) -> Senpai
+defaultSenpai (x, y, u, c, g, r) =
+  Senpai
+    { valori = defaultValori u c g r,
+      posizione = (x, y)
+    }
+
+maybeValori :: Maybe Senpai -> Maybe Valori
+maybeValori Nothing = Nothing
+maybeValori s = (Just . valori . fromJust) s
+
+positionPoints :: Senpai -> Int
+positionPoints (Senpai _ (n, m)) = ((n + m) * (n + m - 1) `div` 2) + n - m
+
+points :: Senpai -> Int
+points (Senpai valori _) = umilta valori + coraggio valori + gentilezza valori + rispetto valori
 
 -- ! Metodi create init table
 -- sfrutta il pattern matching per definire la formattazione da rispettare
@@ -100,6 +111,9 @@ format (s : some) = s : format some
 -- gestisce la riga raw di un file.dojo per poter essere formattata e la trasforma nella relativa valutazione
 lineFormat :: String -> [(Int, Int)]
 lineFormat ('\t' : _ : '=' : values) = read (format values) :: [(Int, Int)]
+
+senpaiLineFormat :: String -> [(Int, Int, Int, Int, Int, Int)]
+senpaiLineFormat ('\t' : _ : '=' : values) = read (format values) :: [(Int, Int, Int, Int, Int, Int)]
 
 createPlayTable :: String -> Table
 createPlayTable file =
@@ -119,7 +133,7 @@ createPlayTable file =
     areOut [] = False
     areOut (x : xs) = (\(x, y) -> x > n || y > n) x || areOut xs
 
-    _senpai = map defaultSenpai (lineFormat (l !! 2))
+    _senpai = map defaultSenpai (senpaiLineFormat (l !! 2))
     _u = lineFormat (l !! 3)
     _c = lineFormat (l !! 4)
     _g = lineFormat (l !! 5)
@@ -174,131 +188,84 @@ allCoordinatesValori :: Table -> [(Int, Int)]
 allCoordinatesValori (Table _ _ u c g r) = u ++ c ++ g ++ r
 
 -- Muove il senpai verso la prossima meta
-moveSenpai :: Table -> Senpai -> Senpai
-moveSenpai table (Senpai valori posizione) =
+moveSenpai :: [(Int, Int)] -> Senpai -> Senpai
+moveSenpai globalValori (Senpai valori posizione) =
   Senpai
     { valori = valori,
       posizione = nextPosizione
     }
   where
-    nearest = posizione `nearestValueIn` allCoordinatesValori table
+    nearest = posizione `nearestValueIn` globalValori
     nextPosizione = posizione `closerTo` nearest
 
-handleCombat :: Table -> Table
-handleCombat (Table dimensione senpai u c g r) =
-  Table
-    { dimensione = dimensione,
-      senpai = filter haveMorePoints newSenpai,
-      u = u,
-      c = c,
-      g = g,
-      r = r
-    }
+combat :: [Senpai] -> [Senpai]
+combat senpai = filter toKeep . map incrementValoriSenpai $ senpai
   where
-    newSenpai = map incrementValore senpai
-
-    -- ritorna la complessità ed il senpai più vicino
-    nearestSenpai :: Senpai -> (Int, Senpai)
-    nearestSenpai (Senpai _ pos) = minimumBy (\(x, _) (x', _) -> compare x x') (filter (\(_, s) -> posizione s /= pos) (map (\s -> (complexityCalc pos (posizione s), s)) senpai))
-
-    -- determina se il senpai possiede più punti totali di quello immediatamente vicino
-    haveMorePoints :: Senpai -> Bool
-    haveMorePoints senpai
-      | fst complexity <= 1 = calcWinner -- ? TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
-      | otherwise = True
+    -- determina se il senpai possiede più punti totali di quello immediatamente vicino (o true se nessuno si trova a distanza 1)
+    toKeep senpai = Just senpai > nearestSenpai senpai -- se other senpai è Nothing ritorna True
+    nearestSenpai :: Senpai -> Maybe Senpai -- il senpai vicino 1, nothing altrimenti
+    nearestSenpai (Senpai _ pos)
+      | length near == 1 = Just (head near)
+      | otherwise = Nothing
       where
-        -- prende il vicino
-        complexity = nearestSenpai senpai
-        otherSenpai = snd complexity
+        near = filter (\s -> complexityCalc pos (posizione s) == 1) senpai
 
-        calcWinner
-          | points senpai == points otherSenpai = calcParityPoints senpai > calcParityPoints otherSenpai
-          | otherwise = points senpai > points otherSenpai
+    incrementValoriSenpai :: Senpai -> Senpai -- Prende un senpai e lo ritorna incrementando ogni valore se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
+    incrementValoriSenpai senpai =
+      -- ? TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
+      Senpai
+        { valori = incrementValori (valori senpai) ((maybeValori . nearestSenpai) senpai),
+          posizione = posizione senpai
+        }
 
-        calcParityPoints :: Senpai -> Int
-        calcParityPoints (Senpai _ (n, m)) = ((n + m) * (n + m - 1) `div` 2) + n - m
+    incrementValori :: Valori -> Maybe Valori -> Valori
+    incrementValori valori Nothing = valori
+    incrementValori (Valori u c g r) (Just (Valori u' c' g' r')) =
+      Valori
+        { umilta = u `incrementIf` (u > u'),
+          coraggio = c `incrementIf` (c > c'),
+          gentilezza = g `incrementIf` (g > g'),
+          rispetto = r `incrementIf` (r > r')
+        }
 
-    -- Prende un senpai e lo ritorna incrementando ogni valore se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
-    incrementValore :: Senpai -> Senpai
-    incrementValore senpai
-      | fst complexity <= 1 -- ? TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
-        =
-          Senpai
-            { valori =
-                Valori
-                  { umilta = umilta v `incrementIf` (umilta v > umilta (valori otherSenpai)),
-                    coraggio = coraggio v `incrementIf` (coraggio v > coraggio (valori otherSenpai)),
-                    gentilezza = gentilezza v `incrementIf` (gentilezza v > gentilezza (valori otherSenpai)),
-                    rispetto = rispetto v `incrementIf` (rispetto v > rispetto (valori otherSenpai))
-                  },
-              posizione = posizione senpai
-            }
-      | otherwise = senpai
-      where
-        v = valori senpai
-        complexity = nearestSenpai senpai
-        otherSenpai = snd complexity
-
-handleValori :: Table -> Table
-handleValori (Table dimensione senpai u c g r) =
+gong :: Table -> Table -- Ogni esecuzione corrisponde ad un movimento
+gong (Table dimensione senpai u c g r) =
   Table
     { dimensione = dimensione,
-      senpai = map incrementValore senpai,
+      senpai = map incrementValori . combat $ moved,
       u = filterCoordinate u,
       c = filterCoordinate c,
       g = filterCoordinate g,
       r = filterCoordinate r
     }
   where
+    moved = map (moveSenpai $ u ++ c ++ g ++ r) senpai
     -- qui vengono applicate due semplificazioni dovute a due condizioni
     --  due elementi non possonno trovarsi nella stessa posizione (se dovesse succedere si rimuovono entrambi)
     --  la posizione degli elementi da rimuovere coincide con quella dei senpai, senza applicare filtri, in quanto
     --   se un senpai si trova su di una casella senza elemento, non succede nulla
     --   se un senpai si trova sulla stessa casella di un elemento, l'elemento viene rimosso perchè abbiamo incrementato la relativa virtu
-    filterCoordinate = filter (`notElem` map posizione senpai)
+    filterCoordinate = filter (`notElem` map posizione moved)
 
-    -- Prende un senpai e lo ritorna incrementato se la posizione è presente in uno dei rispettivi array
-    incrementValore :: Senpai -> Senpai
-    incrementValore (Senpai valori posizione) =
+    incrementValori :: Senpai -> Senpai -- Prende un senpai e lo ritorna incrementato se la posizione è presente in uno dei rispettivi array
+    incrementValori (Senpai v posizione) =
       Senpai
         { valori =
             Valori
-              { umilta = umilta valori `incrementIf` (posizione `elem` u),
-                coraggio = coraggio valori `incrementIf` (posizione `elem` c),
-                gentilezza = gentilezza valori `incrementIf` (posizione `elem` g),
-                rispetto = rispetto valori `incrementIf` (posizione `elem` r)
+              { umilta = umilta v `incrementIf` (posizione `elem` u),
+                coraggio = coraggio v `incrementIf` (posizione `elem` c),
+                gentilezza = gentilezza v `incrementIf` (posizione `elem` g),
+                rispetto = rispetto v `incrementIf` (posizione `elem` r)
               },
           posizione = posizione
         }
 
--- trasforma la condizione da statica a dinamica, (posizione s `elem` array) devi far si che l'incremento avvenga solo nel caso in cui la posizione di s corrisponde ad una nell'array di posizioni dei valori
-
--- Ogni esecuzione corrisponde ad un movimento
-gong :: Table -> Table
-gong table =
-  handleCombat
-    ( handleValori
-        Table
-          { dimensione = dimensione table,
-            senpai = nextPositions,
-            u = u table,
-            c = c table,
-            g = g table,
-            r = r table
-          }
-    )
-  where
-    -- definisce una funzione toNext con le coordinate già definite
-    toNext = moveSenpai table
-
-    nextPositions = map toNext (senpai table)
-
 runFor :: Table -> Int -> IO Table
-runFor table 1 = return $ gong table
+runFor table 0 = return table
 runFor table for
-  | length (senpai table) <= 1 = return table
-  | null (allCoordinatesValori table) = return table
-  | otherwise = fmap gong rest
+  | (length . senpai) table <= 1 = return table
+  | (null . allCoordinatesValori) table = return table
+  | otherwise = rest
   where
     rest = do gong table `runFor` (for - 1)
 
@@ -315,17 +282,6 @@ main :: IO ()
 main = do
   putStr "Inserisci il file: "
   fileName <- getLine
-
-  if ".dojo" `isSuffixOf` fileName
-    then putStrLn "Opening File... "
-    else do
-      putStrLn "Questo non è un file di tipo .dojo, vuoi aprirlo comunque? [no|yes]"
-      risposta <- getLine
-
-      case map toUpper risposta of
-        "Y" -> putStr "Opening File... "
-        "YES" -> putStr "Opening File... "
-        _ -> exitFailure
 
   isAllowed <- try (openFile fileName ReadMode) :: IO (Either SomeException Handle)
 
