@@ -43,20 +43,24 @@ instance Show Senpai where
     where
       array = asArray v :: [Int]
 
-instance Eq Senpai where
-  (==) s1 s2 = False
-  (/=) s1 s2 = True
-
 instance Show Table where -- Show indica che Table appartiene un'interfaccia Show per definire la funzione show
   show :: Table -> String
   show (Table n senpai u c g r) = "\nN = " ++ show n ++ "\nD = {" ++ "\n\tS = " ++ show senpai ++ ",\n\tU = " ++ show u ++ ",\n\tC = " ++ show c ++ ",\n\tG = " ++ show g ++ ",\n\tR = " ++ show r ++ "\n}"
 
+instance Eq Valori where
+  (==) (Valori u c g r) (Valori u' c' g' r') = u == u' && c == c' && g == g' && r == r'
+  (/=) = (not .) . (==)
+
+instance Eq Senpai where
+  (==) (Senpai v1 p1) (Senpai v2 p2) = v1 == v2 && p1 == p2
+  (/=) = (not .) . (==)
+
 instance Ord Senpai where
+  (<=) = (not .) . (>)
   (>) :: Senpai -> Senpai -> Bool
   (>) senpai otherSenpai
     | points senpai == points otherSenpai = positionPoints senpai > positionPoints otherSenpai
     | otherwise = points senpai > points otherSenpai
-  (<=) = (not .) . (>)
 
 positionPoints :: Senpai -> Int
 positionPoints (Senpai _ (n, m)) = ((n + m) * (n + m - 1) `div` 2) + n - m
@@ -64,8 +68,8 @@ positionPoints (Senpai _ (n, m)) = ((n + m) * (n + m - 1) `div` 2) + n - m
 points :: Senpai -> Int
 points (Senpai valori _) = umilta valori + coraggio valori + gentilezza valori + rispetto valori
 
-defaultSenpai :: (Int, Int, Int, Int, Int, Int) -> Senpai
-defaultSenpai (x, y, u, c, g, r) =
+makeSenpai :: (Int, Int, Int, Int, Int, Int) -> Senpai
+makeSenpai (x, y, u, c, g, r) =
   Senpai
     { valori =
         Valori
@@ -81,47 +85,47 @@ defaultSenpai (x, y, u, c, g, r) =
 incrementedIf :: Int -> Bool -> Int
 incrementedIf valore condizione = valore + if condizione then 1 else 0
 
-complexityCalc :: Num a => (a, a) -> (a, a) -> a
-complexityCalc (x, y) (a, b) = (a - x) ^ 2 + (b - y) ^ 2
+complexityBetween :: Num a => (a, a) -> (a, a) -> a
+complexityBetween (x, y) (a, b) = (a - x) ^ 2 + (b - y) ^ 2
 
 closerToNearestIn :: (Int, Int) -> [(Int, Int)] -> (Int, Int) -- ritorna la prima posizione incrementata di 1 verso la seconda
 closerToNearestIn (x, y) globalValori
-  | x < fst nearest = (x + 1, y)
-  | x > fst nearest = (x - 1, y)
+  | (x - fst nearest) ^ 2 > (y - snd nearest) ^ 2 = (x + if x < fst nearest then 1 else if x > fst nearest then -1 else 0, y)
   | otherwise = (x, y + if y < snd nearest then 1 else if y > snd nearest then -1 else 0)
   where
-    nearest = (minimumBy . comparing) (complexityCalc (x, y)) globalValori -- prende il valore con complessità minore
+    nearest = (minimumBy . comparing) (complexityBetween (x, y)) globalValori -- prende il valore con complessità minore
 
 -- ! Run
 -- Muove il senpai verso la prossima meta
 moveSenpai :: [(Int, Int)] -> Senpai -> Senpai
-moveSenpai globalValori senpai = senpai {posizione = posizione senpai `closerToNearestIn` globalValori}
+moveSenpai globalValori senpai = senpai {posizione = posizione senpai `closerToNearestIn` filter (/= posizione senpai) globalValori}
 
 combat :: [Senpai] -> [Senpai]
-combat senpai = filter toKeep . map incrementValoriSenpai $ senpai
+combat senpai = filter (\s -> Just s > nearestSenpai incremented s) incremented
   where
-    toKeep senpai = Just senpai > nearestSenpai senpai -- determina se il senpai possiede più punti totali di quello immediatamente vicino se other senpai è Nothing ritorna True
+    -- determina se il senpai possiede più punti totali di quello immediatamente vicino se other senpai è Nothing ritorna True
+    incremented = map (incrementValoriSenpai senpai) senpai
 
-    incrementValoriSenpai :: Senpai -> Senpai -- Prende un senpai e lo ritorna incrementando ogni valore se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
-    incrementValoriSenpai senpai = senpai {valori = incrementValori (valori senpai) (fmap valori . nearestSenpai $ senpai)}
-    
-    nearestSenpai :: Senpai -> Maybe Senpai -- il senpai vicino 1, nothing altrimenti
-    nearestSenpai (Senpai _ pos) = do
-      guard (length near == 1)
-      return $ head near
-      where
-        -- ? TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
-        near = filter (\s -> 1 == (complexityCalc pos . posizione) s) senpai
+nearestSenpai :: [Senpai] -> Senpai -> Maybe Senpai -- il senpai vicino 1 o 0, nothing altrimenti
+nearestSenpai incremented actual = do
+  guard . not . null $ near
+  return . head $ near
+  where
+    -- !TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
+    near = filter (\s -> 1 >= posizione actual `complexityBetween` posizione s) . filter (/= actual) $ incremented
 
-    incrementValori :: Valori -> Maybe Valori -> Valori
-    incrementValori valori Nothing = valori
-    incrementValori (Valori u c g r) (Just (Valori u' c' g' r')) =
-      Valori
-        { umilta = u `incrementedIf` (u > u'),
-          coraggio = c `incrementedIf` (c > c'),
-          gentilezza = g `incrementedIf` (g > g'),
-          rispetto = r `incrementedIf` (r > r')
-        }
+incrementValoriSenpai :: [Senpai] -> Senpai -> Senpai -- Prende un senpai e lo ritorna incrementando ogni valore se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
+incrementValoriSenpai senpai actual = actual {valori = incrementValori (valori actual) (fmap valori . nearestSenpai senpai $ actual)}
+
+incrementValori :: Valori -> Maybe Valori -> Valori
+incrementValori valori Nothing = valori
+incrementValori (Valori u c g r) (Just (Valori u' c' g' r')) =
+  Valori
+    { umilta = u `incrementedIf` (u > u'),
+      coraggio = c `incrementedIf` (c > c'),
+      gentilezza = g `incrementedIf` (g > g'),
+      rispetto = r `incrementedIf` (r > r')
+    }
 
 gong :: Table -> Table -- Ogni esecuzione corrisponde ad un movimento
 gong (Table dimensione senpai u c g r) =
@@ -134,7 +138,8 @@ gong (Table dimensione senpai u c g r) =
       r = filterCoordinate r
     }
   where
-    moved = (map . moveSenpai $ u ++ c ++ g ++ r) senpai
+    _coordinatesToMove = if null $ u ++ c ++ g ++ r then map posizione senpai else u ++ c ++ g ++ r
+    moved = (map . moveSenpai $ _coordinatesToMove) senpai
     -- qui vengono applicate due semplificazioni dovute a due condizioni
     --  due elementi non possonno trovarsi nella stessa posizione (se dovesse succedere si rimuovono entrambi)
     --  la posizione degli elementi da rimuovere coincide con quella dei senpai, senza applicare filtri, in quanto
@@ -160,92 +165,73 @@ gong (Table dimensione senpai u c g r) =
 format :: [Char] -> [Char]
 format "}}" = ")]"
 format "}}," = ")]"
+format "{}" = "[]"
+format "{}," = "[]"
 format ('{' : '{' : some) = '[' : '(' : format some
 format ('{' : some) = '(' : format some
-format (',' : some) = ',' : format some
 format ('}' : some) = ')' : format some
 format (s : some) = s : format some
 
 -- gestisce la riga raw di un file.dojo per poter essere formattata e la trasforma nella relativa valutazione
-lineFormat :: String -> [(Int, Int)]
-lineFormat ('\t' : _ : '=' : values) = read (format values) :: [(Int, Int)]
+lineFormat :: Read a => String -> a
+lineFormat ('\t' : _ : '=' : values) = read (format values)
 
-senpaiLineFormat :: String -> [(Int, Int, Int, Int, Int, Int)]
-senpaiLineFormat ('\t' : _ : '=' : values) = read (format values) :: [(Int, Int, Int, Int, Int, Int)]
-
-tableInit :: String -> Table
-tableInit file =
+makeTable :: [String] -> Table
+makeTable file =
   Table
     { dimensione = n,
-      senpai = if areOk (map posizione _senpai) then _senpai else error "Un senpai ha una coordinata superiore alla dimensione",
-      u = if areOk _u then _u else error "Un oggetto 'u' ha una coordinata superiore alla dimensione",
-      c = if areOk _c then _c else error "Un oggetto 'c' ha una coordinata superiore alla dimensione",
-      g = if areOk _g then _g else error "Un oggetto 'g' ha una coordinata superiore alla dimensione",
-      r = if areOk _r then _r else error "Un oggetto 'r' ha una coordinata superiore alla dimensione"
+      senpai = if areOk $ map posizione _senpai then _senpai else error "Un senpai si trova fuori dalla tabella",
+      u = if areOk $ lines !! 3 then lines !! 3 else error "Un oggetto 'u' si trova fuori dalla tabella",
+      c = if areOk $ lines !! 4 then lines !! 4 else error "Un oggetto 'c' si trova fuori dalla tabella",
+      r = if areOk $ lines !! 6 then lines !! 6 else error "Un oggetto 'r' si trova fuori dalla tabella",
+      g = if areOk $ lines !! 5 then lines !! 5 else error "Un oggetto 'g' si trova fuori dalla tabella"
     }
   where
-    l = lines file
-    n = read (drop 4 (head l)) :: Int
+    n = read . drop 4 . head $ file
 
-    areOk :: [(Int, Int)] -> Bool
-    areOk [] = True
-    areOk ((x, y) : xs) = x < n && y < n && areOk xs
+    _senpai = map makeSenpai . lineFormat $ file !! 2
 
-    _senpai = map defaultSenpai (senpaiLineFormat (l !! 2))
-    _u = lineFormat (l !! 3)
-    _c = lineFormat (l !! 4)
-    _g = lineFormat (l !! 5)
-    _r = lineFormat (l !! 6)
+    areOk = and . fmap (\(x, y) -> x < n && y < n)
+
+    lines = map lineFormat file
 
 -- ! Avvio e lettura file
-runFor :: Table -> Int -> IO Table
-runFor table 0 = return table
-runFor table for
-  | (length . senpai) table <= 1 = return table
-  | null $ u table ++ c table ++ g table ++ r table = return table
-  | otherwise = rest
-  where
-    rest = do gong table `runFor` (for - 1)
+runIterations :: Table -> [Table]
+runIterations table
+  | (length . senpai) table <= 1 = [table]
+  -- \| null $ u table ++ c table ++ g table ++ r table = [table]
+  | otherwise = table : (runIterations . gong $ table)
 
-runIterations :: Table -> Int -> IO [Table]
-runIterations table 1 = return [gong table]
-runIterations table for
-  | length (senpai table) <= 1 = return [table]
-  | null $ u table ++ c table ++ g table ++ r table = return [table]
-  | otherwise = fmap (table :) rest
-  where
-    rest = do gong table `runIterations` (for - 1)
+run :: Table -> Table
+run table
+  | (length . senpai) table <= 1 = table
+  -- \| null $ u table ++ c table ++ g table ++ r table = table
+  | otherwise = run $ gong table
 
 main :: IO ()
 main = do
   putStr "Inserisci il file: "
   fileName <- getLine
 
-  isAllowed <- try (openFile fileName ReadMode) :: IO (Either SomeException Handle)
+  isAllowed <- try $ openFile fileName ReadMode :: IO (Either SomeException Handle)
 
   case isAllowed of
-    Left ex -> putStrLn "Error Opening File"
+    Left ex -> putStrLn $ "Errore nell'apertura del file " ++ show ex
     Right handle -> do
-      file <- hGetContents handle
-
-      let table = tableInit file
-
       putStr
         "Scegli l'esecuzione inserendo il valore corrispondente: \
-        \\n - `$num` per mostrare tutte le iterazioni fino a num\
-        \\n - `num` per mostrare solo l'esecuzione num\
+        \\n - `$` per mostrare tutte le iterazioni\
         \\n - qualsiasi altro carattere per mostrare solo la configurazione finale\
         \\n > "
       inputStr <- getLine
 
+      file <- hGetContents handle
+
+      let table = makeTable . lines $ file
       putStrLn "\n   ~ Esecuzione ~"
 
-      ex <- case inputStr of
-        ('$' : n) -> do
-          ex <- table `runIterations` fromMaybe 0 (readMaybe n)
-          print ex
-        _ -> do
-          ex <- table `runFor` fromMaybe 0 (readMaybe inputStr)
-          print ex
+      case inputStr of
+        ('$' : _) -> print $ runIterations table
+        _ -> print $ run table
 
       hClose handle
