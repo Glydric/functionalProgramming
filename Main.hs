@@ -100,12 +100,6 @@ closerToNearestIn (x, y) globalValori
 moveSenpai :: [(Int, Int)] -> Senpai -> Senpai
 moveSenpai globalValori senpai = senpai {posizione = posizione senpai `closerToNearestIn` filter (/= posizione senpai) globalValori}
 
-combat :: [Senpai] -> [Senpai]
-combat senpai = filter (\s -> Just s > nearestSenpai incremented s) incremented
-  where
-    -- determina se il senpai possiede più punti totali di quello immediatamente vicino se other senpai è Nothing ritorna True
-    incremented = map (incrementValoriSenpai senpai) senpai
-
 nearestSenpai :: [Senpai] -> Senpai -> Maybe Senpai -- il senpai vicino 1 o 0, nothing altrimenti
 nearestSenpai incremented actual = do
   guard . not . null $ near
@@ -115,7 +109,7 @@ nearestSenpai incremented actual = do
     near = filter (\s -> 1 >= posizione actual `complexityBetween` posizione s) . filter (/= actual) $ incremented
 
 incrementValoriSenpai :: [Senpai] -> Senpai -> Senpai -- Prende un senpai e lo ritorna incrementando ogni valore se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
-incrementValoriSenpai senpai actual = actual {valori = incrementValori (valori actual) (fmap valori . nearestSenpai senpai $ actual)}
+incrementValoriSenpai all actual = actual {valori = incrementValori (valori actual) (fmap valori . nearestSenpai all $ actual)}
 
 incrementValori :: Valori -> Maybe Valori -> Valori
 incrementValori valori Nothing = valori
@@ -126,6 +120,12 @@ incrementValori (Valori u c g r) (Just (Valori u' c' g' r')) =
       gentilezza = g `incrementedIf` (g > g'),
       rispetto = r `incrementedIf` (r > r')
     }
+
+combat :: [Senpai] -> [Senpai]
+combat senpai = filter (\s -> Just s > nearestSenpai incremented s) incremented
+  where
+    -- determina se il senpai possiede più punti totali di quello immediatamente vicino se other senpai è Nothing ritorna True
+    incremented = map (incrementValoriSenpai senpai) senpai
 
 gong :: Table -> Table -- Ogni esecuzione corrisponde ad un movimento
 gong (Table dimensione senpai u c g r) =
@@ -199,13 +199,11 @@ makeTable file =
 runIterations :: Table -> [Table]
 runIterations table
   | (length . senpai) table <= 1 = [table]
-  -- \| null $ u table ++ c table ++ g table ++ r table = [table]
   | otherwise = table : (runIterations . gong $ table)
 
 run :: Table -> Table
 run table
   | (length . senpai) table <= 1 = table
-  -- \| null $ u table ++ c table ++ g table ++ r table = table
   | otherwise = run $ gong table
 
 main :: IO ()
