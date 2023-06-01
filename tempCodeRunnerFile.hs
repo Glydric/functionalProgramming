@@ -1,2 +1,2 @@
-ando ogni valore se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
-incrementValoriSenpai senpai actual = actual {valori = incrementValori (valori actual) (fmap valori . nearest
+
+        Valori

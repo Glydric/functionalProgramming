@@ -9,32 +9,29 @@ import System.IO (Handle, IOMode (ReadMode), hClose, hGetContents, openFile)
 import Text.Read (readMaybe)
 
 -- ! Dati
-data Valori = Valori
-  { umilta :: Int,
-    coraggio :: Int,
-    gentilezza :: Int,
-    rispetto :: Int
+data Valori a = Valori
+  { umilta :: a,
+    coraggio :: a,
+    gentilezza :: a,
+    rispetto :: a
   }
 
 data Senpai = Senpai
-  { valori :: Valori,
+  { valori :: Valori Int,
     posizione :: (Int, Int)
   }
 
 data Table = Table
   { dimensione :: Int,
     senpai :: [Senpai],
-    u :: [(Int, Int)],
-    c :: [(Int, Int)],
-    g :: [(Int, Int)],
-    r :: [(Int, Int)]
+    allValori :: Valori [(Int, Int)]
   }
 
 class Array a b where
   asArray :: a -> [b]
 
-instance Array Valori Int where
-  asArray :: Valori -> [Int]
+instance Array (Valori a) a where
+  asArray :: Valori a -> [a]
   asArray (Valori h c k r) = [h, c, k, r]
 
 instance Show Senpai where
@@ -45,9 +42,9 @@ instance Show Senpai where
 
 instance Show Table where -- Show indica che Table appartiene un'interfaccia Show per definire la funzione show
   show :: Table -> String
-  show (Table n senpai u c g r) = "\nN = " ++ show n ++ "\nD = {" ++ "\n\tS = " ++ show senpai ++ ",\n\tU = " ++ show u ++ ",\n\tC = " ++ show c ++ ",\n\tG = " ++ show g ++ ",\n\tR = " ++ show r ++ "\n}"
+  show (Table n senpai (Valori u c g r)) = "\nN = " ++ show n ++ "\nD = {" ++ "\n\tS = " ++ show senpai ++ ",\n\tU = " ++ show u ++ ",\n\tC = " ++ show c ++ ",\n\tG = " ++ show g ++ ",\n\tR = " ++ show r ++ "\n}"
 
-instance Eq Valori where
+instance Eq (Valori Int) where
   (==) (Valori u c g r) (Valori u' c' g' r') = u == u' && c == c' && g == g' && r == r'
   (/=) = (not .) . (==)
 
@@ -108,34 +105,43 @@ nearestSenpai incremented actual = do
     -- !TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
     near = filter (\s -> 1 >= posizione actual `complexityBetween` posizione s) . filter (/= actual) $ incremented
 
-incrementValoriSenpai :: [Senpai] -> Senpai -> Senpai -- Prende un senpai e lo ritorna incrementando ogni valore se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
-incrementValoriSenpai all actual = actual {valori = incrementValori (valori actual) (fmap valori . nearestSenpai all $ actual)}
-
-incrementValori :: Valori -> Maybe Valori -> Valori
-incrementValori valori Nothing = valori
-incrementValori (Valori u c g r) (Just (Valori u' c' g' r')) =
-  Valori
-    { umilta = u `incrementedIf` (u > u'),
-      coraggio = c `incrementedIf` (c > c'),
-      gentilezza = g `incrementedIf` (g > g'),
-      rispetto = r `incrementedIf` (r > r')
+incrementValoriSenpai :: (Senpai -> Char -> (Valori Int -> Int) -> Bool) -> Senpai -> Senpai
+incrementValoriSenpai condition actual =
+  actual
+    { valori =
+        Valori
+          { umilta = incrementCondition 'u' umilta,
+            coraggio = incrementCondition 'c' coraggio,
+            gentilezza = incrementCondition 'g' gentilezza,
+            rispetto = incrementCondition 'r' rispetto
+          }
     }
+  where
+    incrementCondition s f = (f . valori $ actual) `incrementedIf` condition actual s f
 
 combat :: [Senpai] -> [Senpai]
-combat senpai = filter (\s -> Just s > nearestSenpai incremented s) incremented
+combat allSenpais = filter (\s -> Just s > nearestSenpai incremented s) incremented
   where
     -- determina se il senpai possiede più punti totali di quello immediatamente vicino se other senpai è Nothing ritorna True
-    incremented = map (incrementValoriSenpai senpai) senpai
+    incremented = map (incrementValoriSenpai condition) allSenpais
+
+    -- Prende un senpai e lo ritorna incrementando ogni valore se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
+    condition s _ = maybe (const False) (\(Senpai v _) f -> (f . valori) s > f v) $ nearestSenpai allSenpais s
+
+-- TODO prova ad implementare una list comphrension t = [s | s <- senpai, incremented <- map (incrementValoriSenpai senpai) s, Just s > nearestSenpai incremented s]
 
 gong :: Table -> Table -- Ogni esecuzione corrisponde ad un movimento
-gong (Table dimensione senpai u c g r) =
+gong (Table dimensione senpai (Valori u c g r)) =
   Table
     { dimensione = dimensione,
-      senpai = map incrementValori . combat $ moved,
-      u = filterCoordinate u,
-      c = filterCoordinate c,
-      g = filterCoordinate g,
-      r = filterCoordinate r
+      senpai = map (incrementValoriSenpai condition) . combat $ moved,
+      allValori =
+        Valori
+          { umilta = filterCoordinate u,
+            coraggio = filterCoordinate c,
+            gentilezza = filterCoordinate g,
+            rispetto = filterCoordinate r
+          }
     }
   where
     _coordinatesToMove = if null $ u ++ c ++ g ++ r then map posizione senpai else u ++ c ++ g ++ r
@@ -147,18 +153,10 @@ gong (Table dimensione senpai u c g r) =
     --   se un senpai si trova sulla stessa casella di un elemento, l'elemento viene rimosso perchè abbiamo incrementato la relativa virtu
     filterCoordinate = filter (`notElem` map posizione moved)
 
-    incrementValori :: Senpai -> Senpai -- Prende un senpai e lo ritorna incrementato se la posizione è presente in uno dei rispettivi array
-    incrementValori (Senpai v posizione) =
-      Senpai
-        { valori =
-            Valori
-              { umilta = umilta v `incrementedIf` (posizione `elem` u),
-                coraggio = coraggio v `incrementedIf` (posizione `elem` c),
-                gentilezza = gentilezza v `incrementedIf` (posizione `elem` g),
-                rispetto = rispetto v `incrementedIf` (posizione `elem` r)
-              },
-          posizione = posizione
-        }
+    condition (Senpai _ p) 'u' _ = p `elem` u
+    condition (Senpai _ p) 'c' _ = p `elem` c
+    condition (Senpai _ p) 'g' _ = p `elem` g
+    condition (Senpai _ p) 'r' _ = p `elem` r
 
 -- ! Metodi init table
 -- sfrutta il pattern matching per definire la formattazione da rispettare
@@ -181,10 +179,13 @@ makeTable file =
   Table
     { dimensione = n,
       senpai = if areOk $ map posizione _senpai then _senpai else error "Un senpai si trova fuori dalla tabella",
-      u = if areOk $ lines !! 3 then lines !! 3 else error "Un oggetto 'u' si trova fuori dalla tabella",
-      c = if areOk $ lines !! 4 then lines !! 4 else error "Un oggetto 'c' si trova fuori dalla tabella",
-      r = if areOk $ lines !! 6 then lines !! 6 else error "Un oggetto 'r' si trova fuori dalla tabella",
-      g = if areOk $ lines !! 5 then lines !! 5 else error "Un oggetto 'g' si trova fuori dalla tabella"
+      allValori =
+        Valori
+          { umilta = if areOk $ lines !! 3 then lines !! 3 else error "Un oggetto 'u' si trova fuori dalla tabella",
+            coraggio = if areOk $ lines !! 4 then lines !! 4 else error "Un oggetto 'c' si trova fuori dalla tabella",
+            rispetto = if areOk $ lines !! 6 then lines !! 6 else error "Un oggetto 'r' si trova fuori dalla tabella",
+            gentilezza = if areOk $ lines !! 5 then lines !! 5 else error "Un oggetto 'g' si trova fuori dalla tabella"
+          }
     }
   where
     n = read . drop 4 . head $ file
