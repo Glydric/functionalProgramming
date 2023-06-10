@@ -6,7 +6,6 @@ import Data.Foldable (minimumBy)
 import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import Data.Ord
 import System.IO (Handle, IOMode (ReadMode), hClose, hGetContents, openFile)
-import Text.Read (readMaybe)
 
 -- ! Dati
 data Valori a = Valori
@@ -27,18 +26,17 @@ data Table = Table
     allValori :: Valori [(Int, Int)]
   }
 
-class Array a b where
-  asArray :: a -> [b]
-
-instance Array (Valori a) a where
-  asArray :: Valori a -> [a]
-  asArray (Valori h c k r) = [h, c, k, r]
+instance Functor (Valori) where
+  fmap f (Valori u c g r) = Valori
+          { umilta = f u,
+            coraggio = f c,
+            gentilezza = f g,
+            rispetto = f r
+          }
 
 instance Show Senpai where
   show :: Senpai -> String
-  show (Senpai v p) = show (fst p, snd p, array !! 0, array !! 1, array !! 2, array !! 3)
-    where
-      array = asArray v :: [Int]
+  show (Senpai v p) = show (fst p, snd p, umilta v, coraggio v, gentilezza v, rispetto v)
 
 instance Show Table where -- Show indica che Table appartiene un'interfaccia Show per definire la funzione show
   show :: Table -> String
@@ -102,7 +100,6 @@ nearestSenpai incremented actual = do
   guard . not . null $ near
   return . head $ near
   where
-    -- !TODO attenzione, qui ho definito che i punti vengono controllati anche se la posizione è la stessa, cosa probabilmente corretta ma mancante nella documentazione
     near = filter (\s -> 1 >= posizione actual `complexityBetween` posizione s) . filter (/= actual) $ incremented
 
 incrementValoriSenpai :: (Senpai -> Char -> (Valori Int -> Int) -> Bool) -> Senpai -> Senpai
@@ -125,38 +122,34 @@ combat allSenpais = filter (\s -> Just s > nearestSenpai incremented s) incremen
     -- determina se il senpai possiede più punti totali di quello immediatamente vicino se other senpai è Nothing ritorna True
     incremented = map (incrementValoriSenpai condition) allSenpais
 
-    -- Prende un senpai e lo ritorna incrementando ogni valore se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
-    condition s _ = maybe (const False) (\(Senpai v _) f -> (f . valori) s > f v) $ nearestSenpai allSenpais s
-
--- TODO prova ad implementare una list comphrension t = [s | s <- senpai, incremented <- map (incrementValoriSenpai senpai) s, Just s > nearestSenpai incremented s]
+    -- Prende un senpai ritorna true se il senpai più vicino si trova a complessità 1 ed inoltre il relativo valore è maggiore di quello dell'avversario
+    condition s _ f = maybe (False) (\s' -> (f . valori) s > (f . valori) s') $ nearestSenpai allSenpais s
 
 gong :: Table -> Table -- Ogni esecuzione corrisponde ad un movimento
-gong (Table dimensione senpai (Valori u c g r)) =
+gong (Table dimensione senpai valori) =
   Table
     { dimensione = dimensione,
       senpai = map (incrementValoriSenpai condition) . combat $ moved,
-      allValori =
-        Valori
-          { umilta = filterCoordinate u,
-            coraggio = filterCoordinate c,
-            gentilezza = filterCoordinate g,
-            rispetto = filterCoordinate r
-          }
+      allValori = fmap filterCoordinate valori
     }
   where
     _coordinatesToMove = if null $ u ++ c ++ g ++ r then map posizione senpai else u ++ c ++ g ++ r
     moved = (map . moveSenpai $ _coordinatesToMove) senpai
     -- qui vengono applicate due semplificazioni dovute a due condizioni
-    --  due elementi non possonno trovarsi nella stessa posizione (se dovesse succedere si rimuovono entrambi)
+    --  due valori non possono trovarsi nella stessa posizione (se dovesse succedere si rimuovono entrambi)
     --  la posizione degli elementi da rimuovere coincide con quella dei senpai, senza applicare filtri, in quanto
     --   se un senpai si trova su di una casella senza elemento, non succede nulla
     --   se un senpai si trova sulla stessa casella di un elemento, l'elemento viene rimosso perchè abbiamo incrementato la relativa virtu
     filterCoordinate = filter (`notElem` map posizione moved)
-
     condition (Senpai _ p) 'u' _ = p `elem` u
     condition (Senpai _ p) 'c' _ = p `elem` c
     condition (Senpai _ p) 'g' _ = p `elem` g
     condition (Senpai _ p) 'r' _ = p `elem` r
+
+    u = umilta valori
+    c = coraggio valori
+    g = gentilezza valori
+    r = rispetto valori
 
 -- ! Metodi init table
 -- sfrutta il pattern matching per definire la formattazione da rispettare
@@ -172,7 +165,7 @@ format (s : some) = s : format some
 
 -- gestisce la riga raw di un file.dojo per poter essere formattata e la trasforma nella relativa valutazione
 lineFormat :: Read a => String -> a
-lineFormat ('\t' : _ : '=' : values) = read (format values)
+lineFormat ('\t' : _ : '=' : values) = read $ format values
 
 makeTable :: [String] -> Table
 makeTable file =
